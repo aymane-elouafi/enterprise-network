@@ -1,0 +1,359 @@
+import base64, re, html, sys
+from PIL import ImageFont
+
+L = "/tmp/claude-1000/-home-aymane-Desktop-labs-and-mini-projects-to-learn/11abd48e-8af5-480f-b0b2-21b3659cd115/scratchpad/logos/"
+OUT = "/tmp/claude-1000/-home-aymane-Desktop-labs-and-mini-projects-to-learn/11abd48e-8af5-480f-b0b2-21b3659cd115/scratchpad/diagram/lab-architecture.svg"
+
+F_REG = "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"
+F_BOLD = "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf"
+F_MONO = "/usr/share/fonts/JetBrainsMono-Regular.ttf"
+_cache = {}
+def tw(text, size, font=F_REG):
+    k = (font, size)
+    if k not in _cache:
+        _cache[k] = ImageFont.truetype(font, size)
+    return _cache[k].getlength(text)
+
+SANS = "'Noto Sans','DejaVu Sans',Arial,sans-serif"
+MONO = "'JetBrains Mono','DejaVu Sans Mono',monospace"
+INK, INK2, INK3 = "#102a43", "#486581", "#829ab1"
+LINE = "#627d98"
+
+# ---------------------------------------------------------------- logos
+def b64(path):
+    return base64.b64encode(open(path, "rb").read()).decode()
+
+def simple_icon(name, color, viewbox=None):
+    svg = open(L + f"probe/{name}.svg").read()
+    assert "<script" not in svg.lower()
+    svg = svg.replace("<svg ", f'<svg fill="{color}" ', 1)
+    if viewbox:
+        svg = svg.replace('viewBox="0 0 24 24"', f'viewBox="{viewbox}"', 1)
+    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode()).decode()
+
+def file_uri(path, mime):
+    return f"data:{mime};base64," + b64(L + path)
+
+LOGO = {
+    "pfsense_w": (simple_icon("pfsense", "#ffffff"), 1, 1),
+    "pfsense":   (simple_icon("pfsense", "#212121"), 1, 1),
+    "vmware":    (simple_icon("vmware", "#607078", "0 10 24 4"), 6, 1),     # wordmark: crop the box to its real bounds
+    "debian":    (simple_icon("debian", "#A81D33"), 1, 1),
+    "ubuntu":    (simple_icon("ubuntu", "#E95420"), 1, 1),
+    "nginx":     (simple_icon("nginx", "#009639"), 1, 1),
+    "apache":    (simple_icon("apache", "#D22128"), 1, 1),
+    "php":       (simple_icon("php", "#777BB4"), 1, 1),
+    "mariadb":   (simple_icon("mariadb", "#003545"), 1, 1),
+    "parrot":    (simple_icon("parrotsecurity", "#0e8f99"), 1, 1),
+    "linux":     (simple_icon("linux", "#222222"), 1, 1),
+    "windows":   (file_uri("windows/windows.svg", "image/svg+xml"), 1, 1),
+    "samba":     (file_uri("samba/samba.svg", "image/svg+xml"), 776 / 136, 1),
+    "suricata":  (file_uri("suricata/Logo-Suricata-horiz-R.png", "image/png"), 1625 / 402, 1),
+    "squid":     (file_uri("squid/squid.png", "image/png"), 1, 1),
+    "dvwa":      (file_uri("dvwa/logo.png", "image/png"), 105 / 60, 1),
+}
+
+def esc(s):
+    return html.escape(s, quote=False)
+
+out = []
+def add(s):
+    out.append(s)
+
+def text(x, y, s, size=12, weight="400", fill=INK, anchor="start", mono=False, spacing=None, italic=False):
+    fam = MONO if mono else SANS
+    ls = f' letter-spacing="{spacing}"' if spacing else ""
+    st = ' font-style="italic"' if italic else ""
+    add(f'<text x="{x}" y="{y}" font-family="{fam}" font-size="{size}" font-weight="{weight}" fill="{fill}" text-anchor="{anchor}"{ls}{st}>{esc(s)}</text>')
+
+def rect(x, y, w, h, fill="#fff", stroke=None, sw=1, rx=0, dash=None, extra=""):
+    s = f' stroke="{stroke}" stroke-width="{sw}"' if stroke else ""
+    d = f' stroke-dasharray="{dash}"' if dash else ""
+    add(f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{rx}" fill="{fill}"{s}{d}{extra}/>')
+
+def logo(key, x, y, h):
+    uri, aspect, _ = LOGO[key]
+    w = h * aspect
+    if key == "squid":
+        cid = f"clip_{int(x)}_{int(y)}"
+        add(f'<clipPath id="{cid}"><circle cx="{x + h/2}" cy="{y + h/2}" r="{h/2}"/></clipPath>')
+        add(f'<image x="{x}" y="{y}" width="{h}" height="{h}" href="{uri}" clip-path="url(#{cid})" preserveAspectRatio="xMidYMid slice"/>')
+        add(f'<circle cx="{x + h/2}" cy="{y + h/2}" r="{h/2}" fill="none" stroke="#d9e2ec" stroke-width="1"/>')
+        return h
+    add(f'<image x="{x}" y="{y}" width="{w}" height="{h}" href="{uri}" preserveAspectRatio="xMidYMid meet"/>')
+    return w
+
+def chip(x, y, key, label=None, h=24, lh=15):
+    """pill with logo and optional text; returns width"""
+    uri, aspect, _ = LOGO[key]
+    lw = lh * aspect
+    pad = 8
+    wtxt = tw(label, 10.5) if label else 0
+    w = pad + lw + (6 + wtxt if label else 0) + pad
+    if key == "dvwa":
+        rect(x, y, w, h, fill="#1f2933", stroke="#1f2933", sw=1, rx=4)
+    else:
+        rect(x, y, w, h, fill="#f0f4f8", stroke="#d9e2ec", sw=1, rx=4)
+    logo(key, x + pad, y + (h - lh) / 2, lh)
+    if label:
+        text(x + pad + lw + 6, y + h / 2 + 3.7, label, size=10.5, fill=INK2)
+    return w
+
+def check(x, y):
+    add(f'<polyline points="{x},{y+5} {x+4},{y+9} {x+11},{y}" fill="none" stroke="#2f855a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>')
+
+def cross(x, y):
+    add(f'<path d="M{x},{y} L{x+9},{y+9} M{x+9},{y} L{x},{y+9}" stroke="#c53030" stroke-width="2.2" stroke-linecap="round"/>')
+
+def zone(x, y, w, h, name, detail, bg, border, accent):
+    rect(x, y, w, h, fill=bg, stroke=border, sw=1.2, rx=8)
+    rect(x, y, 5, h, fill=accent, rx=2)
+    text(x + 20, y + 28, name, size=13, weight="700", fill=accent, spacing="0.6")
+    text(x + w - 16, y + 28, detail, size=10.5, fill=INK2, anchor="end", mono=True)
+
+def card(x, y, w, h, title, sub, ip, accent, dashed=False, logo_key=None, chips=(), note=None):
+    rect(x, y, w, h, fill="#ffffff", stroke="#9fb3c8", sw=1.2, rx=6, dash="5 4" if dashed else None)
+    rect(x, y, 4, h, fill=accent, rx=2)
+    tx = x + 18
+    if logo_key:
+        logo(logo_key, x + 16, y + 14, 24)
+        tx = x + 52
+    text(tx, y + 27, title, size=14, weight="700")
+    if ip:
+        text(x + w - 14, y + 27, ip, size=11, fill=INK2, anchor="end", mono=True)
+    text(tx, y + 46, sub, size=11.5, fill=INK2)
+    if note:
+        text(tx, y + 62, note, size=10.5, fill=INK3, italic=True)
+    cx = x + 16
+    for key, label in chips:
+        cx += chip(cx, y + h - 38, key, label) + 8
+
+def port(cx, cy, s=10):
+    rect(cx - s / 2, cy - s / 2, s, s, fill="#ffffff", stroke="#102a43", sw=1.6, rx=1.5)
+
+def polyline(points, color=LINE, sw=2.2, dash=None, arrow=False):
+    pts = " ".join(f"{px},{py}" for px, py in points)
+    d = f' stroke-dasharray="{dash}"' if dash else ""
+    m = ' marker-end="url(#arr)"' if arrow else ""
+    add(f'<polyline points="{pts}" fill="none" stroke="{color}" stroke-width="{sw}" stroke-linejoin="round" stroke-linecap="round"{d}{m}/>')
+
+def tag(cx, cy, s, anchor="middle", size=10.5):
+    w = tw(s, size, F_MONO) + 12
+    x = cx - w / 2 if anchor == "middle" else (cx if anchor == "start" else cx - w)
+    rect(x, cy - 10, w, 20, fill="#ffffff", stroke="#cbd2d9", sw=1, rx=3)
+    text(x + w / 2, cy + 3.8, s, size=size, fill="#243b53", anchor="middle", mono=True)
+
+def marker(cx, cy, n):
+    add(f'<circle cx="{cx}" cy="{cy}" r="11" fill="{INK}"/>')
+    text(cx, cy + 4.2, str(n), size=12, weight="700", fill="#ffffff", anchor="middle")
+
+W, H = 1600, 1330
+add(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}">')
+add('<defs><marker id="arr" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">'
+    '<path d="M0,0 L10,5 L0,10 z" fill="#243b53"/></marker></defs>')
+rect(0, 0, W, H, fill="#ffffff")
+
+# ---------------------------------------------------------------- host frame + title
+rect(20, 20, 1560, 1290, fill="#f7f9fb", stroke="#cbd2d9", sw=1.2, rx=10)
+text(48, 62, "Segmented lab architecture", size=22, weight="700")
+text(48, 86, "pfSense firewall  ·  802.1Q VLANs on a Linux switch  ·  DMZ with reverse proxy  ·  Suricata IDS", size=12.5, fill=INK2)
+hdr = "Linux host  ·  Workstation 25"
+text(1552, 58, hdr, size=12, fill=INK2, anchor="end")
+logo("vmware", 1552 - tw(hdr, 12) - 12 - 15 * 6, 45, 15)
+text(1552, 78, "LAN segments for every zone,  vmnet8 (NAT) for the WAN", size=10.5, fill=INK3, anchor="end")
+
+# ---------------------------------------------------------------- zones
+Z = {
+    "wan":  ("#fcf1ee", "#e3b9ae", "#c0462d"),
+    "dmz":  ("#fdf7e4", "#e6d391", "#a9741a"),
+    "cli":  ("#eef7f0", "#a9d2b4", "#2f855a"),
+    "srv":  ("#ecf3fb", "#a6c4e6", "#2b6cb0"),
+    "mgmt": ("#f3effb", "#c4b5e8", "#6b46c1"),
+}
+zone(420, 108, 760, 232, "DMZ", "10.10.50.0/24  ·  LAB-DMZ-OUTER", *Z["dmz"])
+zone(50, 430, 350, 320, "WAN", "172.16.148.0/24  ·  vmnet8", *Z["wan"])
+zone(50, 1030, 480, 160, "CLIENTS  ·  VLAN 10", "10.10.10.0/24", *Z["cli"])
+zone(560, 1030, 480, 160, "SERVERS  ·  VLAN 20", "10.10.20.0/24", *Z["srv"])
+zone(1070, 1030, 480, 160, "MGMT  ·  VLAN 99", "10.10.99.0/24", *Z["mgmt"])
+
+# ---------------------------------------------------------------- links (under the cards)
+# WAN <-> pfSense
+polyline([(400, 590), (610, 590)])
+# pfSense <-> DMZ bus
+polyline([(800, 430), (800, 318)])
+polyline([(540, 318), (1060, 318)], sw=3)
+polyline([(610, 288), (610, 318)]); polyline([(990, 288), (990, 318)])
+text(548, 334, "LAB-DMZ-OUTER", size=10, fill=INK3, mono=True)
+# trunk to SW01
+polyline([(800, 750), (800, 850)], sw=3)
+# access links
+polyline([(700, 950), (700, 990), (290, 990), (290, 1030)])
+polyline([(800, 950), (800, 1030)])
+polyline([(900, 950), (900, 990), (1250, 990), (1250, 1030)])
+# IDS01 management NIC
+polyline([(1400, 680), (1400, 1066)])
+# zone stubs to cards
+polyline([(290, 1030), (290, 1066)]); polyline([(800, 1030), (800, 1066)])
+polyline([(1250, 1030), (1250, 1066)])
+# passive copies (dashed)
+polyline([(1250, 440), (1250, 385), (800, 385)], color="#243b53", dash="7 5", sw=1.8)
+polyline([(1250, 680), (1250, 800), (800, 800)], color="#243b53", dash="7 5", sw=1.8)
+for (px, py) in [(800, 385), (800, 800)]:
+    add(f'<circle cx="{px}" cy="{py}" r="6" fill="#ffffff" stroke="#243b53" stroke-width="2"/><circle cx="{px}" cy="{py}" r="2" fill="#243b53"/>')
+text(1030, 376, "passive copy of the DMZ traffic", size=10, fill=INK2, anchor="middle", italic=True)
+text(1030, 818, "passive copy of the VLAN trunk", size=10, fill=INK2, anchor="middle", italic=True)
+
+# ---------------------------------------------------------------- DMZ cards
+card(445, 150, 330, 138, "PROXY01", "Reverse proxy (Internet)  +  forward proxy (clients)", "10.10.50.10", Z["dmz"][2],
+     chips=[("ubuntu", "Ubuntu 24.04"), ("nginx", "Nginx"), ("squid", "Squid")])
+card(825, 150, 330, 138, "WEB01", "Web application, deliberately vulnerable", "10.10.50.20", Z["dmz"][2],
+     chips=[("ubuntu", "Ubuntu 24.04"), ("apache", "Apache"), ("php", "PHP"), ("dvwa", None)])
+polyline([(775, 219), (823, 219)], color="#243b53", sw=2.2, arrow=True)
+tag(799, 200, ":80", size=10)
+
+# ---------------------------------------------------------------- pfSense
+px, py, pw, ph = 610, 430, 380, 320
+rect(px, py, pw, ph, fill="#ffffff", stroke="#1f2933", sw=2, rx=6)
+rect(px, py, pw, 44, fill="#1f2933", rx=6)
+rect(px, py + 30, pw, 14, fill="#1f2933")
+logo("pfsense_w", px + 14, py + 9, 26)
+text(px + 52, py + 28, "FW01  ·  pfSense CE 2.9.0", size=14.5, weight="700", fill="#ffffff")
+text(px + 16, py + 68, "Stateful firewall  ·  router  ·  NAT  ·  DHCP  ·  DNS resolver", size=11.5, fill=INK2)
+text(px + 16, py + 98, "DEFAULT-DENY POLICY", size=10, weight="700", fill=INK3, spacing="1.2")
+rules = [
+    (True,  "Internet → PROXY01 : 80, 443  (port forward)"),
+    (True,  "WEB01 → SRV01 : 3306  (only DMZ → inside rule)"),
+    (True,  "CLIENTS → PROXY01 : 3128, 80, 443  ·  SRV01 : 445"),
+    (True,  "MGMT → all zones"),
+    (False, "everything else: blocked and logged"),
+]
+for i, (ok, s) in enumerate(rules):
+    yy = py + 120 + i * 22
+    (check if ok else cross)(px + 16, yy - 9)
+    text(px + 36, yy, s, size=11.5, fill=INK if ok else "#9b2c2c")
+vx = px + 16
+for lab in ["VLAN 10  10.10.10.1", "VLAN 20  10.10.20.1", "VLAN 99  10.10.99.1"]:
+    wv = tw(lab, 10, F_MONO) + 16
+    rect(vx, py + 238, wv, 24, fill="#f0f4f8", stroke="#d9e2ec", rx=4)
+    text(vx + wv / 2, py + 254, lab, size=10, fill="#243b53", anchor="middle", mono=True)
+    vx += wv + 6
+text(px + pw / 2, py + 286, "em1.10  ·  em1.20  ·  em1.99  =  802.1Q sub-interfaces, the gateway of each zone", size=10, fill=INK3, anchor="middle")
+text(px + pw / 2, py + 304, "Every packet between zones crosses this box", size=10, fill=INK3, anchor="middle", italic=True)
+port(px, 590); port(800, py); port(800, py + ph)
+# interface labels outside
+text(598, 616, "em0  ·  WAN  172.16.148.10/24", size=10.5, fill=INK2, anchor="end", mono=True)
+text(790, 424, "em2  ·  DMZ  10.10.50.1", size=10.5, fill=INK2, anchor="end", mono=True)
+text(790, 770, "em1  ·  TRUNK  (no IP)", size=10.5, fill=INK2, anchor="end", mono=True)
+text(790, 836, "trunk0  ·  802.1Q tags 10, 20, 99", size=10.5, fill=INK2, anchor="end", mono=True)
+
+# ---------------------------------------------------------------- WAN cards
+def mini(x, y, w, h, title, ip, sub, key, accent=Z["wan"][2]):
+    rect(x, y, w, h, fill="#ffffff", stroke="#9fb3c8", sw=1.2, rx=6)
+    rect(x, y, 4, h, fill=accent, rx=2)
+    if key == "vmware":                       # wordmark: place it top right instead of an icon slot
+        logo(key, x + w - 14 - 11 * 6, y + 12, 11)
+        tx = x + 18
+    else:
+        logo(key, x + 16, y + (h - 26) / 2, 26)
+        tx = x + 54
+    text(tx, y + 24, title, size=12.5, weight="700")
+    text(tx, y + 42, ip, size=10.5, fill=INK2, mono=True)
+    text(tx, y + 58, sub, size=10.5, fill=INK3)
+mini(70, 480, 310, 70, "Parrot Security  (attacker)", "172.16.148.100", "attacks the published website", "parrot")
+mini(70, 560, 310, 70, "Laptop  =  the Internet", "172.16.148.1", "curl, nmap from outside", "linux")
+mini(70, 640, 310, 70, "VMware NAT gateway", "172.16.148.2", "default route and upstream DNS", "vmware")
+
+# ---------------------------------------------------------------- IDS01
+ix, iy, iw, ih = 1210, 440, 340, 240
+rect(ix, iy, iw, ih, fill="#ffffff", stroke="#334e68", sw=2, rx=6)
+rect(ix, iy, iw, 44, fill="#334e68", rx=6)
+rect(ix, iy + 30, iw, 14, fill="#334e68")
+text(ix + 16, iy + 28, "IDS01  ·  Suricata sensor", size=14.5, weight="700", fill="#ffffff")
+text(ix + iw - 14, iy + 28, "8.0.8", size=11, fill="#d9e2ec", anchor="end", mono=True)
+text(ix + 16, iy + 68, "Passive detection (IDS mode), no blocking yet", size=11.5, fill=INK2)
+cx = ix + 16
+cx += chip(cx, iy + 82, "ubuntu", "Ubuntu 24.04") + 8
+chip(cx, iy + 82, "suricata", None, lh=17)
+for i, s in enumerate(["AF_PACKET capture on dmzfw0 and tap0",
+                       "~53,000 ET Open rules + 6 local rules",
+                       "Capture NICs have no IP address",
+                       "Logs: fast.log and eve.json (JSON)"]):
+    yy = iy + 138 + i * 22
+    add(f'<circle cx="{ix + 22}" cy="{yy - 4}" r="2.4" fill="{INK3}"/>')
+    text(ix + 34, yy, s, size=11.5, fill=INK)
+port(1250, iy); port(1250, iy + ih); port(1400, iy + ih)
+text(1258, 432, "dmzfw0  →  DMZ", size=10, fill=INK2, mono=True)
+text(1258, 702, "tap0  →  TRUNK", size=10, fill=INK2, mono=True)
+text(1408, 702, "mgmt0  →  VLAN 99", size=10, fill=INK2, mono=True)
+
+# ---------------------------------------------------------------- SW01
+sx, sy, sw_, sh = 640, 850, 320, 100
+rect(sx, sy, sw_, sh, fill="#ffffff", stroke="#52606d", sw=2, rx=6)
+rect(sx, sy, 5, sh, fill="#52606d", rx=2)
+logo("debian", sx + 18, sy + 14, 26)
+text(sx + 56, sy + 30, "SW01  ·  Debian 13", size=14, weight="700")
+text(sx + 56, sy + 48, "VLAN-aware Linux bridge (br0), Layer 2 only", size=11, fill=INK2)
+for lab, xx in [("vlan10", 700), ("vlan20", 800), ("vlan99", 900)]:
+    port(xx, sy + sh)
+    text(xx, sy + sh - 14, lab, size=10, fill=INK2, anchor="middle", mono=True)
+port(800, sy)
+
+# ---------------------------------------------------------------- VLAN cards
+card(70, 1066, 440, 100, "CLIENT01", "Test client (the Windows VM, only during tests)", "DHCP .100–.199", Z["cli"][2], dashed=True,
+     chips=[("windows", "Windows 10")])
+card(580, 1066, 440, 100, "SRV01", "Database and file share (the data)", "10.10.20.10", Z["srv"][2],
+     chips=[("ubuntu", "Ubuntu 24.04"), ("mariadb", "MariaDB"), ("samba", None)])
+card(1090, 1066, 215, 100, "ADMIN01", "Admin workstation", "10.10.99.10", Z["mgmt"][2],
+     chips=[("windows", "Windows 10")])
+card(1325, 1066, 205, 100, "IDS01", "Management NIC only", "10.10.99.20", Z["mgmt"][2], chips=[("suricata", None)])
+
+# ---------------------------------------------------------------- labels and request-path markers
+tag(510, 570, "TCP 80 / 443", size=10.5)
+marker(426, 590, 1)
+marker(800, 350, 2)
+marker(799, 246, 3)
+tag(495, 975, "access · VLAN 10", size=10.5)
+tag(1075, 975, "access · VLAN 99", size=10.5)
+marker(800, 1000, 4)
+text(814, 1004, "access · VLAN 20", size=10.5, fill=INK2, mono=True)
+
+# ---------------------------------------------------------------- technology panel
+tx0, ty0, tw0, th0 = 50, 776, 510, 182
+rect(tx0, ty0, tw0, th0, fill="#ffffff", stroke="#cbd2d9", sw=1, rx=6)
+text(tx0 + 18, ty0 + 24, "TECHNOLOGIES USED", size=10, weight="700", fill=INK3, spacing="1.2")
+rows = [
+    ("PLATFORM",    [("vmware", None), ("linux", "Linux host")]),
+    ("NETWORK",     [("pfsense", "pfSense CE"), ("debian", "Debian 13  (switch)")]),
+    ("PROXY",       [("ubuntu", "Ubuntu 24.04"), ("nginx", "Nginx"), ("squid", "Squid")]),
+    ("APPLICATION", [("apache", "Apache"), ("php", "PHP"), ("dvwa", None), ("mariadb", "MariaDB"), ("samba", None)]),
+    ("SECURITY",    [("suricata", None), ("parrot", "Parrot OS"), ("windows", "Windows 10")]),
+]
+for i, (lab, items) in enumerate(rows):
+    yy = ty0 + 40 + i * 28
+    text(tx0 + 18, yy + 15, lab, size=9.5, weight="700", fill=INK3, spacing="0.8")
+    cx = tx0 + 112
+    for key, label in items:
+        cx += chip(cx, yy, key, label, h=22, lh=14) + 8
+
+# ---------------------------------------------------------------- legend
+lx, ly = 50, 1218
+rect(lx, ly, 1500, 70, fill="#ffffff", stroke="#cbd2d9", sw=1, rx=6)
+text(lx + 18, ly + 24, "LEGEND", size=10, weight="700", fill=INK3, spacing="1.2")
+polyline([(lx + 18, ly + 40), (lx + 62, ly + 40)], sw=2.2); text(lx + 72, ly + 44, "network link", size=11.5, fill=INK2)
+polyline([(lx + 18, ly + 58), (lx + 62, ly + 58)], color="#243b53", dash="7 5", sw=1.8); text(lx + 72, ly + 62, "passive copy of traffic (sensor)", size=11.5, fill=INK2)
+text(lx + 360, ly + 24, "ONE REQUEST, FOLLOWED", size=10, weight="700", fill=INK3, spacing="1.2")
+steps = [
+    (1, "A visitor on the Internet reaches the pfSense WAN on 80 / 443"),
+    (2, "The port forward sends it to PROXY01 (Nginx, TLS ends here)"),
+    (3, "Nginx forwards plain HTTP to WEB01 (Apache, PHP, DVWA)"),
+    (4, "WEB01 queries SRV01 on 3306, through pfSense and VLAN 20"),
+]
+for i, (n, s) in enumerate(steps):
+    cx2 = lx + 372 + (i // 2) * 560
+    cy2 = ly + 42 + (i % 2) * 20
+    marker(cx2 + 0, cy2 - 4, n)
+    text(cx2 + 20, cy2, s, size=11.5, fill=INK)
+
+add("</svg>")
+open(OUT, "w").write("\n".join(out))
+print("written", OUT, len("\n".join(out)) // 1024, "KB")
